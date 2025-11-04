@@ -22,6 +22,7 @@ class ctm_model:
     time: list
     partial_col_density: np.ndarray
     Z: np.ndarray
+    DZ: np.ndarray
     ctmtype: str
 
 @dataclass

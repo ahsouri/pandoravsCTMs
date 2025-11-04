@@ -52,7 +52,9 @@ def CMAQ_reader(dir_mcip: str, dir_cmaq: str, YYYYMM: str, gasname: str):
                         datetime.timedelta(minutes=0))
 
         prs = _read_nc(met_file_3d_file, 'PRES').astype('float32')/100.0  # hPa
-        Z = _read_nc(met_file_3d_file, 'ZH').astype('float32')
+        ZH = _read_nc(met_file_3d_file, 'ZH').astype('float32')
+        ZF =  _read_nc(met_file_3d_file, 'ZF').astype('float32')
+        DZ = (ZF-ZH)*2.0
         #surf_prs = _read_nc(met_file_2d_file, 'PRSFC').astype('float32')/100.0
         TA = _read_nc(met_file_3d_file, 'TA').astype('float32')
         if gasname == 'HCHO':
@@ -62,7 +64,7 @@ def CMAQ_reader(dir_mcip: str, dir_cmaq: str, YYYYMM: str, gasname: str):
         gas = gas.astype('float32')
         gas = calculate_molec_density(gas, prs, TA)
         # populate cmaq_data format
-        cmaq_data = ctm_model(lat, lon, time, gas, Z, 'CMAQ')
+        cmaq_data = ctm_model(lat, lon, time, gas, ZH, DZ, 'CMAQ')
         return cmaq_data
 
     cmaq_target_files = sorted(
@@ -192,6 +194,11 @@ def pandora_reader(filename: str, YYYYMMDD1: str, YYYYMMDD2: str, lat_ctm, lon_c
         delimiter=' ',
         encoding='latin1'
     )
+    # filter bad data
+    mask = (data['L2_NO2_quality_flag'] == 0.0) & (
+        data['solar_zenith_deg'] < 65.0)
+    data = data.loc[mask]
+
     start_dt = pd.to_datetime(YYYYMMDD1, format='%Y%m%d', utc=True)
     end_dt = pd.to_datetime(YYYYMMDD2, format='%Y%m%d', utc=True)
     mask = data['time'] != -999
@@ -203,13 +210,10 @@ def pandora_reader(filename: str, YYYYMMDD1: str, YYYYMMDD2: str, lat_ctm, lon_c
     # filter based on time
     mask = (data['time'] >= start_dt) & (data['time'] < end_dt)
     data = data.loc[mask]
-    # filter bad data
-    mask = (data['L2_NO2_quality_flag'] == 0.0) & (
-        data['solar_zenith_deg'] < 70.0)
-    data = data.loc[mask]
     if data.empty:
         return None
     else:
+        print("This file has legit data")
         return pandora(data['time'], lat, lon, np.array(data['NO2_column_mol_m2'])*6.022e23/1e4*1e-15,
                        np.array(data['NO2_column_uncert_total']) *
                        6.022e23/1e4*1e-15,

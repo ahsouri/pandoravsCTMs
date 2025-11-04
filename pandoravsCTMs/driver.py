@@ -29,7 +29,7 @@ class pandoravsCTMs(object):
 
         # Initialize and read CTM data
         reader_obj.add_ctm_data(ctm_type, ctm_path, mcip_dir=mcip_dir)
-        reader_obj.read_ctm_data('201806', gas)
+        reader_obj.read_ctm_data(YYYYMMDD1[0:6], gas)
         self.ctmdata = reader_obj.ctm_data
 
         # Process NO2 data
@@ -44,21 +44,27 @@ class pandoravsCTMs(object):
         '''
            pair pandora and the ctm
         '''
-        for pandora in self.pandora:
+
+        all_outputs = {}   # make one dict to hold everything
+
+        for i, pandora in enumerate(self.pandora):
             if pandora is None:
-                continue   # skip this one
+               continue
             output = collocate(pandora, self.ctmdata)
-            savemat('test.mat', output)
-            exit()
+            # give each sub-dict a unique name
+            all_outputs[f"pandora_{i}"] = output
+
+        # write all at once
+        savemat('test.mat', all_outputs)
 
 
 # testing
 if __name__ == "__main__":
     pandora_obj = pandoravsCTMs()
-    pandora_obj.read_data('CMAQ', Path('/media/asouri/Amir_5TB1/SAO/Rajesh_CMAQ/25oct/cmaq_d01'),
+    pandora_obj.read_data('CMAQ', Path('./cmaq_test/'),
                           'NO2', Path(
-                              '/media/asouri/Amir_5TB1/NASA/TEMPO/pandora_data/PGN_rnvs3_L2_files/test'),
-                          '20220616', '20220619', Path(
-                              '/media/asouri/Amir_5TB1/SAO/Rajesh_CMAQ/25oct/mcip_d01'),
-                          num_job=1)
+                              '/discover/nobackup/asouri/GITS/pandoravsCTMs/pandoravsCTMs/PGN_rnvs3_L2_files/'),
+                          '20240101', '20240130', Path(
+                              './cmaq_test/'),
+                          num_job=6)
     pandora_obj.pair()
