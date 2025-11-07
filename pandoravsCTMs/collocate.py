@@ -3,7 +3,7 @@ import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 from pyproj import Geod
 
-def collocate(pandora_data, ctm_data, ds=5.0, max_dist=100000.0, alt0=2.0):
+def collocate(pandora_data, ctm_data, ds=5.0, max_dist=100000.0, alt0=2.0, ray_tracing=False):
     """
     Efficiently collocates Pandora and CTM datasets by synchronizing time and performing ray-tracing.
 
@@ -17,9 +17,10 @@ def collocate(pandora_data, ctm_data, ds=5.0, max_dist=100000.0, alt0=2.0):
     Returns:
         dict: Collocated results with keys 'ctm_SCD', 'ctm_VCD', 'pandora_VCD', 'pandora_VCD_err', 'pandora_SCD'
     """
+    if pandora_data is None:
+       return None
 
     print('Colocating Pandora and CTM...')
-
     # Prepare CTM time arrays for efficient lookup
     time_ctm = []
     time_ctm_datetype = []
@@ -41,7 +42,6 @@ def collocate(pandora_data, ctm_data, ds=5.0, max_dist=100000.0, alt0=2.0):
     ctm_lat = ctm_data[0].latitude
     ctm_toa = np.max(ctm_data[0].Z.flatten())
     geod = Geod(ellps='WGS84')
-
     # Arrays to collect results
     ctm_SCD, ctm_VCD_direct, ctm_VCD_raytracing, pandora_VCD, pandora_VCD_err, pandora_SCD, lat_pandora, lon_pandora = [], [], [], [], [], [], [], []
 
@@ -51,44 +51,50 @@ def collocate(pandora_data, ctm_data, ds=5.0, max_dist=100000.0, alt0=2.0):
         closest_index_day = int(np.floor(closest_index / 25.0))
         closest_index_hour = int(closest_index % 25)
         print(f"Closest CTM file for Pandora at {pandora_time} is {time_ctm_datetype[closest_index_day][closest_index_hour]}.")
-
         ctm_partial_col_dens = ctm_data[closest_index_day].partial_col_density[closest_index_hour, ...]
         ctm_DZ = ctm_data[closest_index_day].DZ[closest_index_hour, ...]
         ctm_Z = ctm_data[closest_index_day].Z[closest_index_hour, ...]
-        # LOS points
-        s = np.arange(0, max_dist, ds)
-        azi = pandora_data.saa[t1]
-        zen = pandora_data.sza[t1]
-        lon0 = pandora_data.longitude
-        lat0 = pandora_data.latitude
-        # Compute LOS coordinates (vectorized)
-        x = s * np.sin(np.radians(zen))
-        y = s * np.cos(np.radians(zen))
-        lons, lats, alts = (np.zeros_like(s) for _ in range(3))
-        for i in range(0,np.size(s)):
-           lons[i], lats[i], _ = geod.fwd(lon0, lat0, azi, x[i])
-           alts[i] = alt0 + y[i]
-           if alts[i] > ctm_toa:
-              break
-        # Find nearest CTM grid points (vectorized)
-        # Flatten CTM grid for fast search
-        ctm_lon_flat = ctm_lon.flatten()
-        ctm_lat_flat = ctm_lat.flatten()
+        if ray_tracing == True:
+           # LOS points
+           s = np.arange(0, max_dist, ds)
+           azi = pandora_data.saa[t1]
+           zen = pandora_data.sza[t1]
+           lon0 = pandora_data.longitude
+           lat0 = pandora_data.latitude
+           # Compute LOS coordinates (vectorized)
+           x = s * np.sin(np.radians(zen))
+           y = s * np.cos(np.radians(zen))
+           lons, lats, alts = (np.zeros_like(s) for _ in range(3))
+           for i in range(0,np.size(s)):
+              lons[i], lats[i], _ = geod.fwd(lon0, lat0, azi, x[i])
+              alts[i] = alt0 + y[i]
+              if alts[i] > ctm_toa:
+                 break
+           # Find nearest CTM grid points (vectorized)
+           # Flatten CTM grid for fast search
+           ctm_lon_flat = ctm_lon.flatten()
+           ctm_lat_flat = ctm_lat.flatten()
 
-        ctm_SCD_temp = 0.0
-        for lon, lat, alt in zip(lons, lats, alts):
-            if (lon == 0.0) | (lat == 0.0) | (alt==0.0):
-               continue
-            # Find closest grid point index using KDTree for speed (if available)
-            distances = np.sqrt((ctm_lon_flat - lon) ** 2 + (ctm_lat_flat - lat) ** 2)
-            idx_flat = np.argmin(distances)
-            i, j = np.unravel_index(idx_flat, ctm_lon.shape)
-            # Find closest altitude index
-            z_cost = np.abs(ctm_Z[:, i, j] - alt)
-            k = np.argmin(z_cost)
-            #print(f"the altitude is at {alt} and the model alt is at {ctm_Z[k,i,j]}")
-            # Integrate partial column density
-            ctm_SCD_temp += ctm_partial_col_dens[k, i, j] * ds
+           ctm_SCD_temp = 0.0
+           for lon, lat, alt in zip(lons, lats, alts):
+              if (lon == 0.0) | (lat == 0.0) | (alt==0.0):
+                 continue
+              # Find closest grid point index using KDTree for speed (if available)
+              distances = np.sqrt((ctm_lon_flat - lon) ** 2 + (ctm_lat_flat - lat) ** 2)
+              idx_flat = np.argmin(distances)
+              i, j = np.unravel_index(idx_flat, ctm_lon.shape)
+              # Find closest altitude index
+              z_cost = np.abs(ctm_Z[:, i, j] - alt)
+              k = np.argmin(z_cost)
+              #print(f"the altitude is at {alt} and the model alt is at {ctm_Z[k,i,j]}")
+              # Integrate partial column density
+              ctm_SCD_temp += ctm_partial_col_dens[k, i, j] * ds
+        else:
+           ctm_SCD_temp = 0.0
+           ctm_lon_flat = ctm_lon.flatten()
+           ctm_lat_flat = ctm_lat.flatten()
+           lon0 = pandora_data.longitude
+           lat0 = pandora_data.latitude
 
         distances = np.sqrt((ctm_lon_flat - lon0) ** 2 + (ctm_lat_flat - lat0) ** 2)
         idx_flat = np.argmin(distances)
@@ -99,7 +105,7 @@ def collocate(pandora_data, ctm_data, ds=5.0, max_dist=100000.0, alt0=2.0):
         pandora_VCD_err.append(pandora_data.uncertainty[t1])
         pandora_SCD.append(pandora_data.column[t1] * amf)
         ctm_SCD.append(ctm_SCD_temp*1e-15)
-        ctm_VCD_direct.append(CMAQ_VC)
+        ctm_VCD_direct.append(CMAQ_VC*1e-15)
         ctm_VCD_raytracing.append(ctm_SCD_temp*1e-15 / amf if amf != 0 else np.nan)
 
     return {
@@ -109,7 +115,7 @@ def collocate(pandora_data, ctm_data, ds=5.0, max_dist=100000.0, alt0=2.0):
         "pandora_VCD": np.array(pandora_VCD),
         "pandora_VCD_err": np.array(pandora_VCD_err),
         "pandora_SCD": np.array(pandora_SCD),
-        "time": pandora_data.time,
+        "time":   np.array(pandora_data.time.view('int64') / 1e9 / 86400  + 719529),
         "lat": lat0,
         "lon": lon0
     }

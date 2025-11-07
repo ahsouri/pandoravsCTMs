@@ -1,4 +1,4 @@
-
+from joblib import Parallel, delayed
 from pathlib import Path
 import numpy as np
 from reader import readers
@@ -45,12 +45,16 @@ class pandoravsCTMs(object):
            pair pandora and the ctm
         '''
 
-        all_outputs = {}   # make one dict to hold everything
+        all_outputs = {}
 
-        for i, pandora in enumerate(self.pandora):
-            if pandora is None:
+        #outputs = Parallel(n_jobs=1)(delayed(collocate)(
+        #        self.pandora[k], self.ctmdata) for k in range(len(self.pandora)))
+
+        for i,pandora_data in enumerate(self.pandora):
+            output = collocate(pandora_data, self.ctmdata)
+            if output is None:
                continue
-            output = collocate(pandora, self.ctmdata)
+            print(np.size(pandora_data.column))
             # give each sub-dict a unique name
             all_outputs[f"pandora_{i}"] = output
 
@@ -64,7 +68,7 @@ if __name__ == "__main__":
     pandora_obj.read_data('CMAQ', Path('./cmaq_test/'),
                           'NO2', Path(
                               '/discover/nobackup/asouri/GITS/pandoravsCTMs/pandoravsCTMs/PGN_rnvs3_L2_files/'),
-                          '20240101', '20240130', Path(
+                          '20240101', '20240201', Path(
                               './cmaq_test/'),
-                          num_job=6)
+                          num_job=12)
     pandora_obj.pair()

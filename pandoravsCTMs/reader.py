@@ -195,10 +195,9 @@ def pandora_reader(filename: str, YYYYMMDD1: str, YYYYMMDD2: str, lat_ctm, lon_c
         encoding='latin1'
     )
     # filter bad data
-    mask = (data['L2_NO2_quality_flag'] == 0.0) & (
+    mask = (data['L2_NO2_quality_flag'] <= 1.0) & (
         data['solar_zenith_deg'] < 65.0)
     data = data.loc[mask]
-
     start_dt = pd.to_datetime(YYYYMMDD1, format='%Y%m%d', utc=True)
     end_dt = pd.to_datetime(YYYYMMDD2, format='%Y%m%d', utc=True)
     mask = data['time'] != -999
